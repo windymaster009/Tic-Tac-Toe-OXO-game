@@ -1,6 +1,6 @@
-# simple_calculator
+# simple OXO game 
 
-create only using kotlin 
+ 
 it just a simple one nothing amazing 
 
 ![alt text](https://i.imgur.com/nfAObUM.jpg)
