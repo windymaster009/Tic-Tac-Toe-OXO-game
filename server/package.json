@@ -1,0 +1,25 @@
+{
+  "dependencies": {
+    "express": "^4.18.2",
+    "http": "^0.0.1-security",
+    "path": "^0.12.7",
+    "socket.io": "^4.7.3"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.2"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "dev" : "nodemon server.js"
+  },
+  "name": "server",
+  "version": "1.0.0",
+  "description": "this tic tac tao game server",
+  "main": "server.js",
+  "keywords": [
+    "game",
+    "server"
+  ],
+  "author": "J'Corp Windy",
+  "license": "MIT"
+}
