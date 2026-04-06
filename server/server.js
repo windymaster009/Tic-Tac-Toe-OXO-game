@@ -78,6 +78,45 @@ function getWinningCombination(board) {
   )) || null;
 }
 
+function getBoardOutcome(board) {
+  const winningCombinations = getWinningCombinations().filter((combination) => (
+    combination.every((index) => board[index] && board[index] === board[combination[0]])
+  ));
+
+  const xWinningCombination = winningCombinations.find((combination) => board[combination[0]] === 'X') || null;
+  const oWinningCombination = winningCombinations.find((combination) => board[combination[0]] === 'O') || null;
+
+  if (xWinningCombination && oWinningCombination) {
+    return {
+      gameEnded: true,
+      winner: null,
+      winningCombination: []
+    };
+  }
+
+  if (xWinningCombination || oWinningCombination) {
+    return {
+      gameEnded: true,
+      winner: xWinningCombination ? 'X' : 'O',
+      winningCombination: xWinningCombination || oWinningCombination
+    };
+  }
+
+  if (!board.includes(null)) {
+    return {
+      gameEnded: true,
+      winner: null,
+      winningCombination: []
+    };
+  }
+
+  return {
+    gameEnded: false,
+    winner: null,
+    winningCombination: []
+  };
+}
+
 function getWinningCombinations() {
   return [
     [0, 1, 2, 3, 4], [1, 2, 3, 4, 5],
@@ -199,11 +238,16 @@ function evaluateSwap(board, sourceIndex, targetIndex, symbol, opponent) {
   const clone = [...board];
   clone[sourceIndex] = opponent;
   clone[targetIndex] = symbol;
+  const outcome = getBoardOutcome(clone);
+  const wins = outcome.winner === symbol;
+  const loses = outcome.winner === opponent;
 
   return {
     board: clone,
-    wins: Boolean(getWinningCombination(clone)),
-    score: scoreMove(clone, targetIndex, symbol) + scoreMove(clone, sourceIndex, opponent)
+    wins,
+    score: (scoreMove(clone, targetIndex, symbol) + scoreMove(clone, sourceIndex, opponent))
+      + (wins ? 1000 : 0)
+      - (loses ? 1000 : 0)
   };
 }
 
@@ -378,20 +422,20 @@ function cleanupStalePlayers(room) {
   }
 }
 
-function maybeFinishGame(room, symbol) {
-  const winningCombination = getWinningCombination(room.board);
+function maybeFinishGame(room) {
+  const outcome = getBoardOutcome(room.board);
 
-  if (winningCombination) {
+  if (outcome.winner) {
     room.gameEnded = true;
-    room.winner = symbol;
-    room.winningCombination = winningCombination;
-    room.scores[symbol] += 1;
-    setStatusMessage(room, `${symbol === 'X' ? '💙' : '💚'} Player ${symbol} wins this round!`);
+    room.winner = outcome.winner;
+    room.winningCombination = outcome.winningCombination;
+    room.scores[outcome.winner] += 1;
+    setStatusMessage(room, `${outcome.winner === 'X' ? '💙' : '💚'} Player ${outcome.winner} wins this round!`);
     room.aiPendingAt = null;
     return true;
   }
 
-  if (!room.board.includes(null)) {
+  if (outcome.gameEnded) {
     room.gameEnded = true;
     room.winner = null;
     room.winningCombination = [];
@@ -421,7 +465,7 @@ function performAiTurn(room) {
     room.updatedAt = Date.now();
     room.lastAction = { type: 'move', symbol, index: ownWinningMove };
     setEffect(room, { type: 'move', symbol, indexes: [ownWinningMove] });
-    maybeFinishGame(room, symbol);
+    maybeFinishGame(room);
     return;
   }
 
@@ -536,7 +580,7 @@ function performAiTurn(room) {
       room.lastAction = { type: 'swap', symbol, sourceIndex: bestSwap.sourceIndex, targetIndex: bestSwap.targetIndex };
       setEffect(room, { type: 'swap', symbol, sourceIndex: bestSwap.sourceIndex, targetIndex: bestSwap.targetIndex });
 
-      if (!maybeFinishGame(room, symbol)) {
+      if (!maybeFinishGame(room)) {
         finishTurn(room, symbol);
         setStatusMessage(room, `🔁 AI ${symbol} reshuffled the board.`);
       }
@@ -560,7 +604,7 @@ function performAiTurn(room) {
       room.lastAction = { type: 'double', symbol, indexes: [...doublePair] };
       setEffect(room, { type: 'double', symbol, indexes: [...doublePair] });
 
-      if (!maybeFinishGame(room, symbol)) {
+      if (!maybeFinishGame(room)) {
         finishTurn(room, symbol);
         setStatusMessage(room, `⚡ AI ${symbol} played a double move.`);
       }
@@ -606,7 +650,7 @@ function performAiTurn(room) {
     room.lastAction = { type: 'move', symbol, index: normalMove };
     setEffect(room, { type: 'move', symbol, indexes: [normalMove] });
 
-    if (!maybeFinishGame(room, symbol)) {
+    if (!maybeFinishGame(room)) {
       finishTurn(room, symbol);
       setStatusMessage(room, `🤖 AI ${symbol} made its move.`);
     }
@@ -789,6 +833,10 @@ app.post('/api/rooms/:roomCode/move', (req, res) => {
   room.playerLastSeen[symbol] = Date.now();
   room.updatedAt = Date.now();
   clearTransientAction(room);
+  if (maybeFinishGame(room)) {
+    res.json(serializeRoom(room, playerId));
+    return;
+  }
 
   const winningCombination = getWinningCombination(room.board);
 
@@ -1018,6 +1066,10 @@ app.post('/api/rooms/:roomCode/ability', (req, res) => {
     room.updatedAt = Date.now();
     room.lastAction = { type: 'swap', symbol, sourceIndex, targetIndex: index };
     setEffect(room, { type: 'swap', symbol, sourceIndex, targetIndex: index });
+    if (maybeFinishGame(room)) {
+      res.json(serializeRoom(room, playerId));
+      return;
+    }
     finishTurn(room, symbol);
     setStatusMessage(room, `🔁 Player ${symbol} swapped the board positions.`);
     res.json(serializeRoom(room, playerId));
