@@ -10,6 +10,8 @@ const rooms = new Map();
 const clientRoot = path.resolve(__dirname, '..');
 const PLAYER_STALE_MS = 12000;
 const MAX_ENERGY = 4;
+const AI_PLAYER_ID = 'ai-player';
+const AI_THINK_MS = 900;
 const ABILITY_COSTS = {
   erase: 2,
   block: 1,
@@ -162,11 +164,99 @@ function clearExpiredBlock(room) {
   }
 }
 
+function countJoinedPlayers(room) {
+  if (room.mode === 'solo') {
+    return room.players.X ? 2 : 0;
+  }
+
+  return Number(Boolean(room.players.X)) + Number(Boolean(room.players.O));
+}
+
+function getEmptyIndexes(board) {
+  return board
+    .map((value, index) => (value === null ? index : -1))
+    .filter((index) => index !== -1);
+}
+
+function getCriticalThreat(board, symbol) {
+  for (const combination of getWinningCombinations()) {
+    const values = combination.map((index) => board[index]);
+    const ownCount = values.filter((value) => value === symbol).length;
+    const emptyIndexes = combination.filter((index) => board[index] === null);
+
+    if (ownCount === 4 && emptyIndexes.length === 1) {
+      return {
+        emptyIndex: emptyIndexes[0],
+        combination
+      };
+    }
+  }
+
+  return null;
+}
+
+function evaluateSwap(board, sourceIndex, targetIndex, symbol, opponent) {
+  const clone = [...board];
+  clone[sourceIndex] = opponent;
+  clone[targetIndex] = symbol;
+
+  return {
+    board: clone,
+    wins: Boolean(getWinningCombination(clone)),
+    score: scoreMove(clone, targetIndex, symbol) + scoreMove(clone, sourceIndex, opponent)
+  };
+}
+
+function getBestDoubleMove(room, symbol) {
+  const emptyIndexes = getEmptyIndexes(room.board)
+    .filter((index) => !room.blockedCell || room.blockedCell.index !== index)
+    .sort((a, b) => scoreMove(room.board, b, symbol) - scoreMove(room.board, a, symbol))
+    .slice(0, 8);
+
+  let bestPair = null;
+  let bestScore = -Infinity;
+
+  for (let i = 0; i < emptyIndexes.length; i += 1) {
+    for (let j = i + 1; j < emptyIndexes.length; j += 1) {
+      const first = emptyIndexes[i];
+      const second = emptyIndexes[j];
+      const tempBoard = [...room.board];
+      tempBoard[first] = symbol;
+
+      if (getWinningCombination(tempBoard)) {
+        continue;
+      }
+
+      tempBoard[second] = symbol;
+      if (getWinningCombination(tempBoard)) {
+        continue;
+      }
+
+      const pairScore = scoreMove(tempBoard, first, symbol) + scoreMove(tempBoard, second, symbol);
+      if (pairScore > bestScore) {
+        bestScore = pairScore;
+        bestPair = [first, second];
+      }
+    }
+  }
+
+  return bestPair;
+}
+
+function scheduleAiTurn(room) {
+  if (room.mode === 'solo' && !room.gameEnded && room.currentPlayer === room.aiSymbol) {
+    room.aiPendingAt = Date.now() + AI_THINK_MS;
+  } else {
+    room.aiPendingAt = null;
+  }
+}
+
 function finishTurn(room, symbol) {
   room.hintUsedThisTurn[symbol] = false;
   room.currentPlayer = room.currentPlayer === 'X' ? 'O' : 'X';
   room.energy[room.currentPlayer] = Math.min(MAX_ENERGY, room.energy[room.currentPlayer] + 1);
   clearExpiredBlock(room);
+  scheduleAiTurn(room);
 }
 
 function setEffect(room, effect) {
@@ -192,6 +282,9 @@ function createRoom() {
       X: null,
       O: null
     },
+    mode: 'multi',
+    aiSymbol: null,
+    aiPendingAt: null,
     playerLastSeen: {
       X: 0,
       O: 0
@@ -240,7 +333,9 @@ function setStatusMessage(room, message) {
 }
 
 function hasTwoPlayers(room) {
-  return Boolean(room.players.X) && Boolean(room.players.O);
+  return room.mode === 'solo'
+    ? Boolean(room.players.X)
+    : Boolean(room.players.X) && Boolean(room.players.O);
 }
 
 function resetRoundState(room) {
@@ -258,6 +353,7 @@ function resetRoundState(room) {
   room.shieldedCells = { X: null, O: null };
   room.lastAction = null;
   room.effect = null;
+  room.aiPendingAt = null;
 }
 
 function cleanupStalePlayers(room) {
@@ -265,6 +361,10 @@ function cleanupStalePlayers(room) {
   let removedSymbol = null;
 
   for (const symbol of ['X', 'O']) {
+    if (room.mode === 'solo' && symbol === room.aiSymbol) {
+      continue;
+    }
+
     if (room.players[symbol] && now - room.playerLastSeen[symbol] > PLAYER_STALE_MS) {
       room.players[symbol] = null;
       room.playerLastSeen[symbol] = 0;
@@ -278,10 +378,260 @@ function cleanupStalePlayers(room) {
   }
 }
 
+function maybeFinishGame(room, symbol) {
+  const winningCombination = getWinningCombination(room.board);
+
+  if (winningCombination) {
+    room.gameEnded = true;
+    room.winner = symbol;
+    room.winningCombination = winningCombination;
+    room.scores[symbol] += 1;
+    setStatusMessage(room, `${symbol === 'X' ? '💙' : '💚'} Player ${symbol} wins this round!`);
+    room.aiPendingAt = null;
+    return true;
+  }
+
+  if (!room.board.includes(null)) {
+    room.gameEnded = true;
+    room.winner = null;
+    room.winningCombination = [];
+    setStatusMessage(room, '🤝 It is a tie. Restart to play again.');
+    room.aiPendingAt = null;
+    return true;
+  }
+
+  return false;
+}
+
+function performAiTurn(room) {
+  const symbol = room.aiSymbol;
+  const opponent = symbol === 'X' ? 'O' : 'X';
+
+  if (!symbol || room.gameEnded || room.currentPlayer !== symbol) {
+    return;
+  }
+
+  clearTransientAction(room);
+
+  const ownWinningMove = findCriticalMove(room.board, symbol);
+  if (ownWinningMove !== null && (!room.blockedCell || room.blockedCell.index !== ownWinningMove)) {
+    room.board[ownWinningMove] = symbol;
+    room.lastMoveIndex = ownWinningMove;
+    room.playerLastSeen[symbol] = Date.now();
+    room.updatedAt = Date.now();
+    room.lastAction = { type: 'move', symbol, index: ownWinningMove };
+    setEffect(room, { type: 'move', symbol, indexes: [ownWinningMove] });
+    maybeFinishGame(room, symbol);
+    return;
+  }
+
+  if (
+    room.energy[symbol] >= ABILITY_COSTS.undo
+    && !room.abilityUsed[symbol].undo
+    && room.lastAction
+    && room.lastAction.type === 'move'
+    && room.lastAction.symbol === opponent
+  ) {
+    const threatAfterLastMove = getCriticalThreat(room.board, opponent);
+    if (threatAfterLastMove && threatAfterLastMove.combination.includes(room.lastAction.index)) {
+      const undoIndex = room.lastAction.index;
+      room.board[undoIndex] = null;
+      if (room.lastMoveIndex === undoIndex) {
+        room.lastMoveIndex = null;
+      }
+      room.energy[symbol] -= ABILITY_COSTS.undo;
+      room.abilityUsed[symbol].undo = true;
+      room.playerLastSeen[symbol] = Date.now();
+      room.updatedAt = Date.now();
+      room.lastAction = { type: 'undo', symbol, index: undoIndex };
+      setEffect(room, { type: 'undo', symbol, index: undoIndex, undoneSymbol: opponent });
+      finishTurn(room, symbol);
+      setStatusMessage(room, `⏪ AI ${symbol} rewound your last move.`);
+      return;
+    }
+  }
+
+  const enemyThreat = getCriticalThreat(room.board, opponent);
+
+  if (
+    enemyThreat
+    && room.energy[symbol] >= ABILITY_COSTS.erase
+    && !room.abilityUsed[symbol].erase
+  ) {
+    const eraseTarget = enemyThreat.combination.find((index) => room.board[index] === opponent && room.shieldedCells[opponent] !== index);
+    if (eraseTarget !== undefined) {
+      room.board[eraseTarget] = null;
+      if (room.lastMoveIndex === eraseTarget) {
+        room.lastMoveIndex = null;
+      }
+      room.energy[symbol] -= ABILITY_COSTS.erase;
+      room.abilityUsed[symbol].erase = true;
+      room.playerLastSeen[symbol] = Date.now();
+      room.updatedAt = Date.now();
+      room.lastAction = { type: 'erase', symbol, index: eraseTarget, erasedSymbol: opponent };
+      setEffect(room, { type: 'erase', symbol, index: eraseTarget, erasedSymbol: opponent });
+      finishTurn(room, symbol);
+      setStatusMessage(room, `🔄 AI ${symbol} erased one of your marks.`);
+      return;
+    }
+  }
+
+  if (
+    enemyThreat
+    && room.energy[symbol] >= ABILITY_COSTS.block
+    && !room.abilityUsed[symbol].block
+    && room.board[enemyThreat.emptyIndex] === null
+  ) {
+    room.blockedCell = { index: enemyThreat.emptyIndex, owner: symbol };
+    room.energy[symbol] -= ABILITY_COSTS.block;
+    room.abilityUsed[symbol].block = true;
+    room.playerLastSeen[symbol] = Date.now();
+    room.updatedAt = Date.now();
+    room.lastAction = { type: 'block', symbol, index: enemyThreat.emptyIndex };
+    setEffect(room, { type: 'block', symbol, index: enemyThreat.emptyIndex });
+    finishTurn(room, symbol);
+    setStatusMessage(room, `⛔ AI ${symbol} froze a dangerous cell.`);
+    return;
+  }
+
+  if (
+    room.energy[symbol] >= ABILITY_COSTS.swap
+    && !room.abilityUsed[symbol].swap
+  ) {
+    const ownMarks = room.board
+      .map((value, index) => (value === symbol && room.shieldedCells[symbol] !== index ? index : -1))
+      .filter((index) => index !== -1);
+    const enemyMarks = room.board
+      .map((value, index) => (value === opponent && room.shieldedCells[opponent] !== index ? index : -1))
+      .filter((index) => index !== -1);
+
+    let bestSwap = null;
+
+    for (const sourceIndex of ownMarks) {
+      for (const targetIndex of enemyMarks) {
+        const swapResult = evaluateSwap(room.board, sourceIndex, targetIndex, symbol, opponent);
+        if (swapResult.wins) {
+          bestSwap = { sourceIndex, targetIndex };
+          break;
+        }
+
+        if (!bestSwap || swapResult.score > bestSwap.score) {
+          bestSwap = { sourceIndex, targetIndex, score: swapResult.score };
+        }
+      }
+
+      if (bestSwap?.score === undefined) {
+        break;
+      }
+    }
+
+    if (bestSwap && (bestSwap.score === undefined || bestSwap.score > 40)) {
+      room.board[bestSwap.sourceIndex] = opponent;
+      room.board[bestSwap.targetIndex] = symbol;
+      room.lastMoveIndex = bestSwap.targetIndex;
+      room.energy[symbol] -= ABILITY_COSTS.swap;
+      room.abilityUsed[symbol].swap = true;
+      room.playerLastSeen[symbol] = Date.now();
+      room.updatedAt = Date.now();
+      room.lastAction = { type: 'swap', symbol, sourceIndex: bestSwap.sourceIndex, targetIndex: bestSwap.targetIndex };
+      setEffect(room, { type: 'swap', symbol, sourceIndex: bestSwap.sourceIndex, targetIndex: bestSwap.targetIndex });
+
+      if (!maybeFinishGame(room, symbol)) {
+        finishTurn(room, symbol);
+        setStatusMessage(room, `🔁 AI ${symbol} reshuffled the board.`);
+      }
+      return;
+    }
+  }
+
+  if (
+    room.energy[symbol] >= ABILITY_COSTS.double
+    && !room.abilityUsed[symbol].double
+  ) {
+    const doublePair = getBestDoubleMove(room, symbol);
+    if (doublePair) {
+      room.board[doublePair[0]] = symbol;
+      room.board[doublePair[1]] = symbol;
+      room.lastMoveIndex = doublePair[1];
+      room.energy[symbol] -= ABILITY_COSTS.double;
+      room.abilityUsed[symbol].double = true;
+      room.playerLastSeen[symbol] = Date.now();
+      room.updatedAt = Date.now();
+      room.lastAction = { type: 'double', symbol, indexes: [...doublePair] };
+      setEffect(room, { type: 'double', symbol, indexes: [...doublePair] });
+
+      if (!maybeFinishGame(room, symbol)) {
+        finishTurn(room, symbol);
+        setStatusMessage(room, `⚡ AI ${symbol} played a double move.`);
+      }
+      return;
+    }
+  }
+
+  if (
+    room.energy[symbol] >= ABILITY_COSTS.shield
+    && !room.abilityUsed[symbol].shield
+  ) {
+    const ownMarks = room.board
+      .map((value, index) => (value === symbol ? index : -1))
+      .filter((index) => index !== -1)
+      .sort((a, b) => scoreMove(room.board, b, symbol) - scoreMove(room.board, a, symbol));
+
+    if (ownMarks.length > 0) {
+      const shieldIndex = ownMarks[0];
+      room.shieldedCells[symbol] = shieldIndex;
+      room.energy[symbol] -= ABILITY_COSTS.shield;
+      room.abilityUsed[symbol].shield = true;
+      room.playerLastSeen[symbol] = Date.now();
+      room.updatedAt = Date.now();
+      room.lastAction = { type: 'shield', symbol, index: shieldIndex };
+      setEffect(room, { type: 'shield', symbol, index: shieldIndex });
+      finishTurn(room, symbol);
+      setStatusMessage(room, `🛡️ AI ${symbol} shielded a key mark.`);
+      return;
+    }
+  }
+
+  const playableMoves = getEmptyIndexes(room.board)
+    .filter((index) => !room.blockedCell || room.blockedCell.index !== index)
+    .sort((a, b) => scoreMove(room.board, b, symbol) - scoreMove(room.board, a, symbol));
+  const hintedMove = getHintMove(room, symbol);
+  const normalMove = hintedMove !== null && playableMoves.includes(hintedMove) ? hintedMove : playableMoves[0];
+
+  if (normalMove !== undefined) {
+    room.board[normalMove] = symbol;
+    room.lastMoveIndex = normalMove;
+    room.playerLastSeen[symbol] = Date.now();
+    room.updatedAt = Date.now();
+    room.lastAction = { type: 'move', symbol, index: normalMove };
+    setEffect(room, { type: 'move', symbol, indexes: [normalMove] });
+
+    if (!maybeFinishGame(room, symbol)) {
+      finishTurn(room, symbol);
+      setStatusMessage(room, `🤖 AI ${symbol} made its move.`);
+    }
+  }
+}
+
+function processAiTurn(room) {
+  if (
+    room.mode === 'solo'
+    && room.aiSymbol
+    && room.currentPlayer === room.aiSymbol
+    && !room.gameEnded
+    && room.aiPendingAt
+    && Date.now() >= room.aiPendingAt
+  ) {
+    room.aiPendingAt = null;
+    performAiTurn(room);
+  }
+}
+
 function serializeRoom(room, playerId) {
   cleanupStalePlayers(room);
+  processAiTurn(room);
   const symbol = room.players.X === playerId ? 'X' : room.players.O === playerId ? 'O' : null;
-  const playersJoined = Number(Boolean(room.players.X)) + Number(Boolean(room.players.O));
+  const playersJoined = countJoinedPlayers(room);
 
   return {
     roomCode: room.roomCode,
@@ -304,7 +654,9 @@ function serializeRoom(room, playerId) {
     statusMessage: room.statusMessage,
     statusVersion: room.statusVersion,
     yourSymbol: symbol,
-    playersJoined
+    playersJoined,
+    isSolo: room.mode === 'solo',
+    aiThinking: room.mode === 'solo' && room.currentPlayer === room.aiSymbol && !room.gameEnded
   };
 }
 
@@ -321,6 +673,27 @@ app.post('/api/rooms', (req, res) => {
     roomCode: room.roomCode,
     playerId,
     symbol: 'X'
+  });
+});
+
+app.post('/api/rooms/solo', (req, res) => {
+  const room = createRoom();
+  const playerId = `player-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+  room.mode = 'solo';
+  room.aiSymbol = 'O';
+  room.players.X = playerId;
+  room.players.O = AI_PLAYER_ID;
+  room.playerLastSeen.X = Date.now();
+  room.playerLastSeen.O = Date.now();
+  room.updatedAt = Date.now();
+  setStatusMessage(room, `🤖 Solo room ${room.roomCode} created. You are X versus AI.`);
+
+  res.json({
+    roomCode: room.roomCode,
+    playerId,
+    symbol: 'X',
+    isSolo: true
   });
 });
 

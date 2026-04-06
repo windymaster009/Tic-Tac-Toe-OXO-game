@@ -2,6 +2,7 @@ window.gameDom = (() => {
     const board = document.getElementById('game-board');
     const roomCodeInput = document.getElementById('room-code');
     const createRoomButton = document.getElementById('create-room-btn');
+    const soloRoomButton = document.getElementById('solo-room-btn');
     const joinRoomButton = document.getElementById('join-room-btn');
     const copyRoomButton = document.getElementById('copy-room-btn');
     const hintButton = document.getElementById('hint-btn');
@@ -30,6 +31,7 @@ window.gameDom = (() => {
         board,
         roomCodeInput,
         createRoomButton,
+        soloRoomButton,
         joinRoomButton,
         copyRoomButton,
         hintButton,

@@ -158,8 +158,23 @@ body::after {
     border-radius: 12px;
 }
 
+#solo-room-btn {
+    padding: 10px 14px;
+    font-size: 16px;
+    cursor: pointer;
+    background:
+        linear-gradient(135deg, rgba(125, 88, 255, 0.95), rgba(52, 195, 255, 0.92));
+    color: #f7fbff;
+    border: 1px solid rgba(145, 180, 255, 0.26);
+    border-radius: 12px;
+    box-shadow:
+        0 12px 28px rgba(85, 120, 255, 0.2),
+        inset 0 1px 0 rgba(255, 255, 255, 0.15);
+}
+
 #join-room-btn,
 #create-room-btn,
+#solo-room-btn,
 #copy-room-btn,
 #hint-btn,
 #restart-btn {
@@ -171,6 +186,7 @@ body::after {
 
 #join-room-btn:hover,
 #create-room-btn:hover,
+#solo-room-btn:hover,
 #copy-room-btn:hover,
 #hint-btn:hover,
 #restart-btn:hover {
@@ -181,6 +197,7 @@ body::after {
 
 #join-room-btn:active,
 #create-room-btn:active,
+#solo-room-btn:active,
 #copy-room-btn:active,
 #hint-btn:active,
 #restart-btn:active {
@@ -189,6 +206,7 @@ body::after {
 
 #join-room-btn::after,
 #create-room-btn::after,
+#solo-room-btn::after,
 #copy-room-btn::after,
 #hint-btn::after,
 #restart-btn::after {
@@ -202,6 +220,7 @@ body::after {
 
 #join-room-btn:hover::after,
 #create-room-btn:hover::after,
+#solo-room-btn:hover::after,
 #copy-room-btn:hover::after,
 #hint-btn:hover::after,
 #restart-btn:hover::after {

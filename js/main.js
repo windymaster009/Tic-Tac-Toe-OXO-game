@@ -2,6 +2,7 @@ const {
     board,
     roomCodeInput,
     createRoomButton,
+    soloRoomButton,
     joinRoomButton,
     copyRoomButton,
     hintButton,
@@ -54,6 +55,8 @@ let roomCode = '';
 let playerId = '';
 let playerSymbol = '';
 let playersJoined = 0;
+let isSoloGame = false;
+let aiThinking = false;
 let gameBoardState = Array(36).fill(null);
 let currentPlayer = 'X';
 let gameEnded = false;
@@ -545,6 +548,36 @@ function updateMoodPanel(playersJoined) {
         return;
     }
 
+    if (isSoloGame) {
+        if (gameEnded) {
+            if (lastWinner === 'X') {
+                setMood(moodXElement, animatedMoodAssets.partying, 'Beat the AI', 'is-happy');
+                setMood(moodOElement, animatedMoodAssets.crying, 'AI got outplayed', 'is-sad');
+            } else if (lastWinner === 'O') {
+                setMood(moodXElement, animatedMoodAssets.crying, 'You lost this round', 'is-sad');
+                setMood(moodOElement, animatedMoodAssets.partying, 'AI won this round', 'is-happy');
+            } else {
+                setMood(moodXElement, animatedMoodAssets.woozy, 'Even match', 'is-panic');
+                setMood(moodOElement, animatedMoodAssets.mindBlown, 'Even match', 'is-panic');
+            }
+            return;
+        }
+
+        if (currentPlayer === 'X') {
+            setMood(
+                moodXElement,
+                hintUsedThisTurn.X ? animatedMoodAssets.nerd : animatedMoodAssets.thinking,
+                hintUsedThisTurn.X ? 'Studying the best punish' : 'Your move against the AI',
+                'is-active'
+            );
+            setMood(moodOElement, animatedMoodAssets.eyes, 'AI is watching closely', 'is-thinking');
+        } else {
+            setMood(moodXElement, animatedMoodAssets.anxious, 'Waiting for the AI move', 'is-panic');
+            setMood(moodOElement, animatedMoodAssets.monocle, aiThinking ? 'AI is calculating' : 'AI is ready', 'is-active');
+        }
+        return;
+    }
+
     if (playersJoined < 2) {
         setMood(moodXElement, animatedMoodAssets.smirkCat, 'Room owner ready', 'is-proud');
         setMood(moodOElement, animatedMoodAssets.eyes, 'Waiting to join', 'is-thinking');
@@ -707,7 +740,7 @@ function updateStatus() {
         }
         renderPlayerStatus('Your turn', playerSymbol, true);
     } else {
-        renderPlayerStatus(`Waiting for ${currentPlayer}`, playerSymbol, false);
+        renderPlayerStatus(isSoloGame ? 'AI is thinking' : `Waiting for ${currentPlayer}`, playerSymbol, false);
     }
 
     const turnKey = gameEnded ? 'end' : currentPlayer;
@@ -742,6 +775,8 @@ function applyRoomState(state) {
     const previousBlockedCellIndex = blockedCellIndex;
 
     playersJoined = state.playersJoined || 0;
+    isSoloGame = Boolean(state.isSolo);
+    aiThinking = Boolean(state.aiThinking);
     gameBoardState = state.board;
     currentPlayer = state.currentPlayer;
     gameEnded = state.gameEnded;
@@ -862,7 +897,9 @@ function applyRoomState(state) {
     } else if (!gameEnded) {
         resultElement.textContent = clutchSymbol && currentPlayer !== clutchSymbol
             ? `🚨 Danger! ${clutchSymbol} is one move from winning.`
-            : `🤝 Both players joined room ${roomCode}.`;
+            : isSoloGame
+                ? (currentPlayer === playerSymbol ? '🤖 Solo mode: your move.' : '🤖 Solo mode: AI is thinking...')
+                : `🤝 Both players joined room ${roomCode}.`;
     }
 
     if (gameEnded) {
@@ -936,6 +973,8 @@ async function createRoom() {
         playerId = data.playerId;
         playerSymbol = data.symbol;
         playersJoined = 1;
+        isSoloGame = false;
+        aiThinking = false;
         gameBoardState = Array(36).fill(null);
         currentPlayer = 'X';
         gameEnded = false;
@@ -976,6 +1015,65 @@ async function createRoom() {
     }
 }
 
+async function createSoloRoom() {
+    if (roomCode && gameBoardState.some(Boolean)) {
+        const shouldCreateNewRoom = await showConfirm('Are you sure you want to start a solo room? Your current match will be replaced.');
+
+        if (!shouldCreateNewRoom) {
+            return;
+        }
+    }
+
+    try {
+        const data = await requestJson(`${apiBaseUrl}/api/rooms/solo`, {
+            method: 'POST'
+        });
+
+        roomCode = data.roomCode;
+        playerId = data.playerId;
+        playerSymbol = data.symbol;
+        playersJoined = 2;
+        isSoloGame = true;
+        aiThinking = false;
+        gameBoardState = Array(36).fill(null);
+        currentPlayer = 'X';
+        gameEnded = false;
+        winningCells = [];
+        lastWinner = null;
+        lastMoveIndex = null;
+        lastMoveSymbol = null;
+        recentMoveIndex = null;
+        recentMoveSymbol = null;
+        hintIndex = null;
+        hintsRemaining = { X: 3, O: 3 };
+        energy = { X: 1, O: 0 };
+        abilityCosts = { erase: 2, block: 1, shield: 1, swap: 3, undo: 2, double: 3 };
+        abilityUsed = {
+            X: { erase: false, block: false, shield: false, swap: false, undo: false, double: false },
+            O: { erase: false, block: false, shield: false, swap: false, undo: false, double: false }
+        };
+        hintUsedThisTurn = { X: false, O: false };
+        blockedCellIndex = null;
+        blockedCellOwner = null;
+        shieldedCells = { X: null, O: null };
+        activeAbility = null;
+        activeAbilitySelection = null;
+        effectVersion = 0;
+        clearEffectTimers();
+        swapEffectIndexes = [];
+        undoEffectIndex = null;
+        doubleMoveIndexes = [];
+        setMusicMode('calm');
+        hideToast();
+        roomCodeInput.value = roomCode;
+        resultElement.textContent = `🤖 Solo room ${roomCode} created. You are X versus AI.`;
+        startPolling();
+        updateStatus();
+    } catch (error) {
+        resultElement.textContent = error.message;
+    }
+}
+
 async function joinRoom() {
     const nextRoomCode = roomCodeInput.value.trim().toUpperCase();
 
@@ -994,6 +1092,8 @@ async function joinRoom() {
         playerId = data.playerId;
         playerSymbol = data.symbol;
         playersJoined = 2;
+        isSoloGame = false;
+        aiThinking = false;
         activeAbility = null;
         activeAbilitySelection = null;
         setMusicMode('calm');
@@ -1041,8 +1141,12 @@ async function handleCellClick(index) {
     if (currentPlayer !== playerSymbol) {
         playInvalidSound();
         animateInvalidCell(index);
-        showHint(`Please wait. ${currentPlayer} is thinking...`);
-        showToast(`Hold on, it is ${currentPlayer}'s turn right now.`, currentPlayer === 'X' ? '❄️' : '🍀', 'turn-wait');
+        showHint(isSoloGame ? 'Please wait. The AI is thinking...' : `Please wait. ${currentPlayer} is thinking...`);
+        showToast(
+            isSoloGame ? '🤖 Hold on, the AI is still planning its move.' : `Hold on, it is ${currentPlayer}'s turn right now.`,
+            isSoloGame ? '🤖' : currentPlayer === 'X' ? '❄️' : '🍀',
+            'turn-wait'
+        );
         return;
     }
 
@@ -1390,6 +1494,7 @@ async function restartGame() {
 }
 
 createRoomButton.addEventListener('click', createRoom);
+soloRoomButton.addEventListener('click', createSoloRoom);
 joinRoomButton.addEventListener('click', joinRoom);
 copyRoomButton.addEventListener('click', copyRoomCode);
 hintButton.addEventListener('click', askForHint);
