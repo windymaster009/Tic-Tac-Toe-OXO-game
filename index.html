@@ -7,8 +7,8 @@
     <link rel="stylesheet" href="style.css">
     <script defer src="js/dom.js?v=1"></script>
     <script defer src="js/config.js?v=1"></script>
-    <script defer src="js/audio.js?v=1"></script>
-    <script defer src="js/main.js?v=13"></script>
+    <script defer src="js/audio.js?v=2"></script>
+    <script defer src="js/main.js?v=15"></script>
     <title>Tic-Tac-Toe</title>
 </head>
 
@@ -23,7 +23,7 @@
                 <button id="solo-room-btn" type="button" title="Play against the AI instantly">🤖 Solo vs AI</button>
                 <button id="join-room-btn" type="button" title="Join a room with a shared code">Join Room</button>
                 <button id="copy-room-btn" type="button" title="Copy the active room code">📋 Copy Code</button>
-                <button id="hint-btn" type="button" title="Get the best move suggestion on your turn">💡 Help</button>
+                <button id="share-room-btn" type="button" title="Share a join link for this room">🔗 Share Game</button>
             </div>
             <div id="connection-status" class="status-line"><span class="live-dot"></span>Connected to server.</div>
             <div id="player-status" class="status-line">Create a room or join an existing code.</div>
@@ -49,6 +49,9 @@
                     </div>
                     <div class="ability-meter">
                         <div class="ability-fill" data-player-bar="X"></div>
+                    </div>
+                    <div class="card-help-row">
+                        <button id="hint-btn" class="card-help-btn" type="button" title="Get the best move suggestion on your turn">💡 Help</button>
                     </div>
                 </div>
             </div>
@@ -76,14 +79,24 @@
             </div>
         </div>
 
-        <div class="game-board" id="game-board">
-            <!-- Cells will be dynamically created here using JavaScript -->
-            <div id="win-line" class="win-line hidden"></div>
+        <div class="board-stage">
+            <div class="game-board" id="game-board">
+                <!-- Cells will be dynamically created here using JavaScript -->
+                <div id="win-line" class="win-line hidden"></div>
+            </div>
         </div>
 
         <div id="result"></div>
 
         <button id="restart-btn" type="button">Restart Game</button>
+
+        <div class="audio-controls audio-controls-side">
+            <button id="music-toggle-btn" type="button" title="Mute or unmute music">🔊 Music</button>
+            <label class="volume-wrap" for="music-volume">
+                <span>Volume</span>
+                <input id="music-volume" type="range" min="0" max="100" value="25">
+            </label>
+        </div>
 
         <div class="game-footer">
             <div id="score" class="score-board">
@@ -103,7 +116,7 @@
         </div>
     </div>
 
-    <div id="toast" class="toast" aria-live="polite"></div>
+    <div id="toast" class="toast-stack" aria-live="polite"></div>
     <div id="confirm-modal" class="modal-backdrop hidden">
         <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="confirm-title">
             <div class="modal-emoji">⚠️</div>

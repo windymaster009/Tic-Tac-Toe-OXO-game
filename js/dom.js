@@ -5,7 +5,10 @@ window.gameDom = (() => {
     const soloRoomButton = document.getElementById('solo-room-btn');
     const joinRoomButton = document.getElementById('join-room-btn');
     const copyRoomButton = document.getElementById('copy-room-btn');
+    const shareRoomButton = document.getElementById('share-room-btn');
     const hintButton = document.getElementById('hint-btn');
+    const musicToggleButton = document.getElementById('music-toggle-btn');
+    const musicVolumeInput = document.getElementById('music-volume');
     const connectionStatusElement = document.getElementById('connection-status');
     const playerStatusElement = document.getElementById('player-status');
     const resultElement = document.getElementById('result');
@@ -34,7 +37,10 @@ window.gameDom = (() => {
         soloRoomButton,
         joinRoomButton,
         copyRoomButton,
+        shareRoomButton,
         hintButton,
+        musicToggleButton,
+        musicVolumeInput,
         connectionStatusElement,
         playerStatusElement,
         resultElement,

@@ -5,7 +5,10 @@ const {
     soloRoomButton,
     joinRoomButton,
     copyRoomButton,
+    shareRoomButton,
     hintButton,
+    musicToggleButton,
+    musicVolumeInput,
     connectionStatusElement,
     playerStatusElement,
     resultElement,
@@ -36,7 +39,11 @@ const {
     playSwapSound,
     playUndoSound,
     playDoubleSound,
-    setMusicMode
+    setMusicMode,
+    setMusicVolume,
+    toggleMusicMute,
+    setMusicMuted,
+    getMusicSettings
 } = window.gameAudio;
 const {
     apiBaseUrl,
@@ -72,9 +79,10 @@ let recentMoveIndex = null;
 let recentMoveSymbol = null;
 let recentMoveTimer = null;
 let hintTimer = null;
-let toastTimer = null;
 let toastVisible = false;
 let toastType = '';
+let toastIdCounter = 0;
+let toastEntries = [];
 let hintIndex = null;
 let clutchCells = [];
 let clutchSymbol = null;
@@ -106,6 +114,7 @@ let effectVersion = 0;
 let previousRenderedTurn = '';
 let lastStatusVersion = 0;
 let confirmResolver = null;
+let autoJoinAttempted = false;
 
 cells.forEach((cell) => {
     const cellElement = document.createElement('div');
@@ -645,35 +654,73 @@ function showToast(message, emoji = '⏳', type = 'general') {
         return;
     }
 
-    if (toastTimer) {
-        clearTimeout(toastTimer);
+    const toastId = `toast-${Date.now()}-${toastIdCounter += 1}`;
+    const toastNode = document.createElement('div');
+    toastNode.className = `toast-item toast-${type}`;
+    toastNode.dataset.toastId = toastId;
+    toastNode.innerHTML = `<span class="toast-emoji">${emoji}</span><span class="toast-text">${message}</span>`;
+    toastElement.appendChild(toastNode);
+
+    const entry = {
+        id: toastId,
+        node: toastNode,
+        type,
+        timer: window.setTimeout(() => removeToastById(toastId), 5000)
+    };
+
+    toastEntries.push(entry);
+    toastVisible = toastEntries.length > 0;
+    toastType = toastEntries[toastEntries.length - 1]?.type || '';
+
+    window.requestAnimationFrame(() => {
+        toastNode.classList.add('show');
+    });
+
+    if (toastEntries.length > 5) {
+        removeToastById(toastEntries[0].id);
     }
-
-    toastElement.innerHTML = `<span class="toast-emoji">${emoji}</span><span class="toast-text">${message}</span>`;
-    toastElement.classList.add('show');
-    toastVisible = true;
-    toastType = type;
-
-    toastTimer = setTimeout(() => {
-        toastElement.classList.remove('show');
-        toastVisible = false;
-        toastType = '';
-    }, 5000);
 }
 
-function hideToast() {
+function removeToastById(toastId) {
     if (!toastElement) {
         return;
     }
 
-    if (toastTimer) {
-        clearTimeout(toastTimer);
-        toastTimer = null;
+    const entryIndex = toastEntries.findIndex((entry) => entry.id === toastId);
+    if (entryIndex === -1) {
+        return;
     }
 
-    toastElement.classList.remove('show');
-    toastVisible = false;
-    toastType = '';
+    const [entry] = toastEntries.splice(entryIndex, 1);
+
+    if (entry?.timer) {
+        clearTimeout(entry.timer);
+    }
+
+    if (entry?.node) {
+        entry.node.classList.remove('show');
+        entry.node.classList.add('leaving');
+        window.setTimeout(() => {
+            entry.node?.remove();
+        }, 360);
+    }
+
+    toastVisible = toastEntries.length > 0;
+    toastType = toastEntries[toastEntries.length - 1]?.type || '';
+}
+
+function hideToast(type = null) {
+    if (!toastElement || toastEntries.length === 0) {
+        return;
+    }
+
+    if (!type) {
+        [...toastEntries].forEach((entry) => removeToastById(entry.id));
+        return;
+    }
+
+    const matchingEntries = toastEntries.filter((entry) => entry.type === type);
+    matchingEntries.forEach((entry) => removeToastById(entry.id));
 }
 
 function showConfirm(message) {
@@ -735,9 +782,7 @@ function updateStatus() {
     }
 
     if (currentPlayer === playerSymbol) {
-        if (toastVisible && toastType === 'turn-wait') {
-            hideToast();
-        }
+        hideToast('turn-wait');
         renderPlayerStatus('Your turn', playerSymbol, true);
     } else {
         renderPlayerStatus(isSoloGame ? 'AI is thinking' : `Waiting for ${currentPlayer}`, playerSymbol, false);
@@ -750,6 +795,19 @@ function updateStatus() {
         playerStatusElement.classList.add('turn-swap');
         previousRenderedTurn = turnKey;
     }
+}
+
+function updateMusicControls() {
+    if (!musicToggleButton || !musicVolumeInput) {
+        return;
+    }
+
+    const { volume, muted } = getMusicSettings();
+    const volumePercent = Math.round(volume * 100);
+
+    musicVolumeInput.value = String(volumePercent);
+    musicToggleButton.textContent = muted || volumePercent === 0 ? '🔇 Muted' : `🔊 Music ${volumePercent}%`;
+    musicToggleButton.classList.toggle('is-muted', muted || volumePercent === 0);
 }
 
 async function requestJson(url, options = {}) {
@@ -767,6 +825,49 @@ async function requestJson(url, options = {}) {
     }
 
     return data;
+}
+
+function getRoomShareUrl(code = roomCode) {
+    const nextCode = String(code || '').trim().toUpperCase();
+    const shareUrl = new URL(window.location.href);
+
+    if (nextCode) {
+        shareUrl.searchParams.set('room', nextCode);
+    } else {
+        shareUrl.searchParams.delete('room');
+    }
+
+    return shareUrl.toString();
+}
+
+async function copyTextToClipboard(text) {
+    if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+        return true;
+    }
+
+    const helperInput = document.createElement('textarea');
+    helperInput.value = text;
+    helperInput.setAttribute('readonly', '');
+    helperInput.style.position = 'fixed';
+    helperInput.style.opacity = '0';
+    helperInput.style.pointerEvents = 'none';
+    document.body.appendChild(helperInput);
+    helperInput.focus();
+    helperInput.select();
+
+    let copied = false;
+    try {
+        copied = document.execCommand('copy');
+    } finally {
+        helperInput.remove();
+    }
+
+    if (!copied) {
+        throw new Error('Copy failed');
+    }
+
+    return true;
 }
 
 function applyRoomState(state) {
@@ -1079,7 +1180,7 @@ async function joinRoom() {
 
     if (!nextRoomCode) {
         resultElement.textContent = 'Enter a room code first.';
-        return;
+        return false;
     }
 
     try {
@@ -1101,8 +1202,10 @@ async function joinRoom() {
         resultElement.textContent = `✨ Joined room ${roomCode} as ${playerSymbol}.`;
         startPolling();
         updateStatus();
+        return true;
     } catch (error) {
         resultElement.textContent = error.message;
+        return false;
     }
 }
 
@@ -1115,7 +1218,7 @@ async function copyRoomCode() {
     }
 
     try {
-        await navigator.clipboard.writeText(code);
+        await copyTextToClipboard(code);
         showToast(`📋 Room code ${code} copied.`, '📋', 'general');
     } catch (error) {
         roomCodeInput.focus();
@@ -1124,14 +1227,50 @@ async function copyRoomCode() {
     }
 }
 
+async function shareRoomLink() {
+    const code = roomCodeInput.value.trim().toUpperCase() || roomCode;
+
+    if (!code || isSoloGame) {
+        showToast(isSoloGame ? '🤖 Share links are for multiplayer rooms only.' : '🔗 Create a multiplayer room first.', '🔗', 'general');
+        return;
+    }
+
+    const shareUrl = getRoomShareUrl(code);
+
+    try {
+        if (navigator.share) {
+            await navigator.share({
+                title: 'Tic-Tac-Toe OXO',
+                text: `Join my room ${code} and let’s play.`,
+                url: shareUrl
+            });
+            showToast('🔗 Game link shared.', '🔗', 'general');
+            return;
+        }
+
+        await copyTextToClipboard(shareUrl);
+        showToast('🔗 Share link copied. Send it to your friend.', '🔗', 'general');
+    } catch (error) {
+        if (error?.name === 'AbortError') {
+            return;
+        }
+
+        try {
+            await copyTextToClipboard(shareUrl);
+            showToast('🔗 Share link copied. Send it to your friend.', '🔗', 'general');
+        } catch (copyError) {
+            showToast('🔗 Could not share automatically. Copy the room code manually.', '🔗', 'general');
+        }
+    }
+}
+
 async function handleCellClick(index) {
     if (!roomCode || !playerId || !playerSymbol || gameEnded) {
         return;
     }
 
-    if (toastVisible && (toastType === 'status' || toastType === 'help')) {
-        hideToast();
-    }
+    hideToast('status');
+    hideToast('help');
 
     if (activeAbility) {
         await useAbility(index - 1);
@@ -1497,7 +1636,20 @@ createRoomButton.addEventListener('click', createRoom);
 soloRoomButton.addEventListener('click', createSoloRoom);
 joinRoomButton.addEventListener('click', joinRoom);
 copyRoomButton.addEventListener('click', copyRoomCode);
+shareRoomButton.addEventListener('click', shareRoomLink);
 hintButton.addEventListener('click', askForHint);
+musicToggleButton.addEventListener('click', () => {
+    toggleMusicMute();
+    updateMusicControls();
+});
+musicVolumeInput.addEventListener('input', (event) => {
+    const volume = Number(event.currentTarget.value) / 100;
+    setMusicVolume(volume);
+    if (volume > 0) {
+        setMusicMuted(false);
+    }
+    updateMusicControls();
+});
 abilityButtons.forEach((button) => button.addEventListener('click', handleAbilityButtonClick));
 confirmCancelButton.addEventListener('click', () => closeConfirm(false));
 confirmOkButton.addEventListener('click', () => closeConfirm(true));
@@ -1516,6 +1668,30 @@ restartButton.addEventListener('click', restartGame);
 updateBoard();
 updateScore();
 updateStatus();
+updateMusicControls();
+
+window.addEventListener('load', async () => {
+    const sharedRoomCode = new URLSearchParams(window.location.search).get('room');
+
+    if (!sharedRoomCode || autoJoinAttempted || roomCode || playerId) {
+        return;
+    }
+
+    autoJoinAttempted = true;
+    roomCodeInput.value = sharedRoomCode.trim().toUpperCase();
+
+    try {
+        const joined = await joinRoom();
+
+        if (joined) {
+            showToast(`🔗 Joined room ${roomCodeInput.value.trim().toUpperCase()} from shared link.`, '🔗', 'status');
+        } else {
+            showToast('🔗 Shared room could not be joined. It may be full or expired.', '🔗', 'general');
+        }
+    } catch (error) {
+        showToast('🔗 Shared room could not be joined. It may be full or expired.', '🔗', 'general');
+    }
+});
 
 window.restartGame = restartGame;
 

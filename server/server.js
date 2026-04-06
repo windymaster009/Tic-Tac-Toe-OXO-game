@@ -78,6 +78,12 @@ function getWinningCombination(board) {
   )) || null;
 }
 
+function getWinningCombinationForSymbol(board, symbol) {
+  return getWinningCombinations().find((combination) => (
+    combination.every((index) => board[index] === symbol)
+  )) || null;
+}
+
 function getWinningCombinations() {
   return [
     [0, 1, 2, 3, 4], [1, 2, 3, 4, 5],
@@ -379,14 +385,18 @@ function cleanupStalePlayers(room) {
 }
 
 function maybeFinishGame(room, symbol) {
-  const winningCombination = getWinningCombination(room.board);
+  const opponent = symbol === 'X' ? 'O' : 'X';
+  const ownWinningCombination = getWinningCombinationForSymbol(room.board, symbol);
+  const opponentWinningCombination = getWinningCombinationForSymbol(room.board, opponent);
+  const winningCombination = ownWinningCombination || opponentWinningCombination;
+  const winnerSymbol = ownWinningCombination ? symbol : opponentWinningCombination ? opponent : null;
 
-  if (winningCombination) {
+  if (winningCombination && winnerSymbol) {
     room.gameEnded = true;
-    room.winner = symbol;
+    room.winner = winnerSymbol;
     room.winningCombination = winningCombination;
-    room.scores[symbol] += 1;
-    setStatusMessage(room, `${symbol === 'X' ? '💙' : '💚'} Player ${symbol} wins this round!`);
+    room.scores[winnerSymbol] += 1;
+    setStatusMessage(room, `${winnerSymbol === 'X' ? '💙' : '💚'} Player ${winnerSymbol} wins this round!`);
     room.aiPendingAt = null;
     return true;
   }
@@ -1018,8 +1028,12 @@ app.post('/api/rooms/:roomCode/ability', (req, res) => {
     room.updatedAt = Date.now();
     room.lastAction = { type: 'swap', symbol, sourceIndex, targetIndex: index };
     setEffect(room, { type: 'swap', symbol, sourceIndex, targetIndex: index });
-    finishTurn(room, symbol);
-    setStatusMessage(room, `🔁 Player ${symbol} swapped the board positions.`);
+
+    if (!maybeFinishGame(room, symbol)) {
+      finishTurn(room, symbol);
+      setStatusMessage(room, `🔁 Player ${symbol} swapped the board positions.`);
+    }
+
     res.json(serializeRoom(room, playerId));
     return;
   }

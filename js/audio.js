@@ -1,10 +1,24 @@
 window.gameAudio = (() => {
     const bgMusic = document.getElementById('bgMusic');
+    const DEFAULT_MUSIC_VOLUME = 0.25;
+    const storedVolume = Number.parseFloat(window.localStorage.getItem('oxo-music-volume') || `${DEFAULT_MUSIC_VOLUME}`);
+    const storedMuted = window.localStorage.getItem('oxo-music-muted') === 'true';
 
     let audioContext = null;
     let audioUnlocked = false;
     let musicMode = 'idle';
     let currentMusicSrc = '';
+    let musicVolume = Number.isFinite(storedVolume) ? Math.max(0, Math.min(1, storedVolume)) : DEFAULT_MUSIC_VOLUME;
+    let musicMuted = storedMuted;
+
+    function applyMusicVolume() {
+        if (!bgMusic) {
+            return;
+        }
+
+        bgMusic.volume = musicMuted ? 0 : musicVolume;
+        bgMusic.muted = musicMuted;
+    }
 
     function ensureAudio() {
         if (audioContext) {
@@ -103,7 +117,7 @@ window.gameAudio = (() => {
             return;
         }
 
-        bgMusic.volume = 0.25;
+        applyMusicVolume();
         bgMusic.play().catch(() => {});
     }
 
@@ -136,7 +150,7 @@ window.gameAudio = (() => {
 
         const shouldChangeTrack = currentMusicSrc !== nextSrc;
         bgMusic.loop = musicMode !== 'victory';
-        bgMusic.volume = musicMode === 'victory' ? 0.3 : 0.25;
+        applyMusicVolume();
 
         if (shouldChangeTrack) {
             currentMusicSrc = nextSrc;
@@ -147,6 +161,34 @@ window.gameAudio = (() => {
         startMusic();
     }
 
+    function setMusicVolume(nextVolume) {
+        musicVolume = Math.max(0, Math.min(1, nextVolume));
+        window.localStorage.setItem('oxo-music-volume', String(musicVolume));
+        applyMusicVolume();
+    }
+
+    function toggleMusicMute() {
+        musicMuted = !musicMuted;
+        window.localStorage.setItem('oxo-music-muted', String(musicMuted));
+        applyMusicVolume();
+        return musicMuted;
+    }
+
+    function setMusicMuted(nextMuted) {
+        musicMuted = Boolean(nextMuted);
+        window.localStorage.setItem('oxo-music-muted', String(musicMuted));
+        applyMusicVolume();
+    }
+
+    function getMusicSettings() {
+        return {
+            volume: musicVolume,
+            muted: musicMuted
+        };
+    }
+
+    applyMusicVolume();
+
     return {
         unlockAudio,
         playMoveSound,
@@ -156,6 +198,10 @@ window.gameAudio = (() => {
         playSwapSound,
         playUndoSound,
         playDoubleSound,
-        setMusicMode
+        setMusicMode,
+        setMusicVolume,
+        toggleMusicMute,
+        setMusicMuted,
+        getMusicSettings
     };
 })();
