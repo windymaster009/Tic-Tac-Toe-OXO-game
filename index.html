@@ -5,27 +5,116 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="stylesheet" href="style.css">
-    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
-    <script src="js/websocket.js"></script>
-    <script src="js/multiplePlay.js"></script>
-    <script defer src=js/main.js></script>
+    <script defer src="js/dom.js?v=1"></script>
+    <script defer src="js/config.js?v=1"></script>
+    <script defer src="js/audio.js?v=1"></script>
+    <script defer src="js/main.js?v=12"></script>
     <title>Tic-Tac-Toe</title>
 </head>
 
 <body>
+    <div class="game-shell">
+        <div class="control-panel">
+            <h1 class="rgb-title">Tic-Tac-Toe OXO</h1>
+            <p class="subtitle">🎮 Create a room, share the code, and player X goes first.</p>
+            <div class="room-controls">
+                <input id="room-code" type="text" maxlength="12" placeholder="Room code">
+                <button id="create-room-btn" type="button" title="Create a fresh multiplayer room">Create Room</button>
+                <button id="join-room-btn" type="button" title="Join a room with a shared code">Join Room</button>
+                <button id="copy-room-btn" type="button" title="Copy the active room code">📋 Copy Code</button>
+                <button id="hint-btn" type="button" title="Get the best move suggestion on your turn">💡 Help</button>
+            </div>
+            <div id="connection-status" class="status-line"><span class="live-dot"></span>Connected to server.</div>
+            <div id="player-status" class="status-line">Create a room or join an existing code.</div>
+        </div>
 
-    <div class="game-board" id="game-board">
-        <!-- Cells will be dynamically created here using JavaScript -->
+        <div class="mood-panel">
+            <div id="mood-x" class="mood-card mood-x">
+                <div class="mood-symbol">X</div>
+                <div class="mood-details">
+                    <div class="mood-topline">
+                        <div class="mood-face" role="img" aria-label="Ready to play">
+                            <span class="mood-face-fallback" aria-hidden="true">😎</span>
+                        </div>
+                        <div class="mood-label">Ready to play</div>
+                    </div>
+                    <div class="ability-list" data-player="X">
+                        <button class="ability-btn ability-erase" data-player="X" data-ability="erase" type="button" title="Erase one opponent mark and end your turn">🔄 Erase <span class="ability-count">1</span></button>
+                        <button class="ability-btn ability-block" data-player="X" data-ability="block" type="button" title="Freeze one empty cell for the opponent next turn">⛔ Block <span class="ability-count">1</span></button>
+                        <button class="ability-btn ability-shield" data-player="X" data-ability="shield" type="button" title="Protect one of your marks from erase">🛡️ Shield <span class="ability-count">1</span></button>
+                        <button class="ability-btn ability-swap" data-player="X" data-ability="swap" type="button" title="Swap one of your marks with one enemy mark">🔁 Swap <span class="ability-count">3</span></button>
+                        <button class="ability-btn ability-undo" data-player="X" data-ability="undo" type="button" title="Cancel the opponent's last placed move">⏪ Undo <span class="ability-count">2</span></button>
+                        <button class="ability-btn ability-double" data-player="X" data-ability="double" type="button" title="Place two marks, but not for an instant win">⚡ Double <span class="ability-count">3</span></button>
+                    </div>
+                    <div class="ability-meter">
+                        <div class="ability-fill" data-player-bar="X"></div>
+                    </div>
+                </div>
+            </div>
+            <div id="mood-o" class="mood-card mood-o">
+                <div class="mood-symbol">O</div>
+                <div class="mood-details">
+                    <div class="mood-topline">
+                        <div class="mood-face" role="img" aria-label="Waiting in the lobby">
+                            <span class="mood-face-fallback" aria-hidden="true">🙂</span>
+                        </div>
+                        <div class="mood-label">Waiting in the lobby</div>
+                    </div>
+                    <div class="ability-list" data-player="O">
+                        <button class="ability-btn ability-erase" data-player="O" data-ability="erase" type="button" title="Erase one opponent mark and end your turn">🔄 Erase <span class="ability-count">1</span></button>
+                        <button class="ability-btn ability-block" data-player="O" data-ability="block" type="button" title="Freeze one empty cell for the opponent next turn">⛔ Block <span class="ability-count">1</span></button>
+                        <button class="ability-btn ability-shield" data-player="O" data-ability="shield" type="button" title="Protect one of your marks from erase">🛡️ Shield <span class="ability-count">1</span></button>
+                        <button class="ability-btn ability-swap" data-player="O" data-ability="swap" type="button" title="Swap one of your marks with one enemy mark">🔁 Swap <span class="ability-count">3</span></button>
+                        <button class="ability-btn ability-undo" data-player="O" data-ability="undo" type="button" title="Cancel the opponent's last placed move">⏪ Undo <span class="ability-count">2</span></button>
+                        <button class="ability-btn ability-double" data-player="O" data-ability="double" type="button" title="Place two marks, but not for an instant win">⚡ Double <span class="ability-count">3</span></button>
+                    </div>
+                    <div class="ability-meter">
+                        <div class="ability-fill" data-player-bar="O"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="game-board" id="game-board">
+            <!-- Cells will be dynamically created here using JavaScript -->
+            <div id="win-line" class="win-line hidden"></div>
+        </div>
+
+        <div id="result"></div>
+
+        <button id="restart-btn" type="button">Restart Game</button>
+
+        <div class="game-footer">
+            <div id="score" class="score-board">
+                <div class="score-team score-x">
+                    <span class="score-mark">X</span>
+                    <span class="score-meta">Wins</span>
+                    <span id="score-x-value" class="score-value">0</span>
+                </div>
+                <div class="score-divider">vs</div>
+                <div class="score-team score-o">
+                    <span class="score-mark">O</span>
+                    <span class="score-meta">Wins</span>
+                    <span id="score-o-value" class="score-value">0</span>
+                </div>
+            </div>
+            <div class="signature">✨ Crafted by <span>@WinDy</span></div>
+        </div>
     </div>
 
-    <div id="result"></div>
-
-    <button id="restart-btn" onclick="restartGame()">Restart Game</button>
-
-    <div id="score"><span style="color:blue">X</span> Wins: 0 | <span style="color:rgb(68, 170, 68)">O</span> Wins: 0
+    <div id="toast" class="toast" aria-live="polite"></div>
+    <div id="confirm-modal" class="modal-backdrop hidden">
+        <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="confirm-title">
+            <div class="modal-emoji">⚠️</div>
+            <h2 id="confirm-title">Create another room?</h2>
+            <p id="confirm-message">Your current match will be replaced.</p>
+            <div class="modal-actions">
+                <button id="confirm-cancel-btn" type="button">Keep current room</button>
+                <button id="confirm-ok-btn" type="button">Create new room</button>
+            </div>
+        </div>
     </div>
-    <div>@WinDy</div>
-
+    <audio id="bgMusic" preload="auto"></audio>
     <canvas id="fireworkCanvas"></canvas>
 </body>
 

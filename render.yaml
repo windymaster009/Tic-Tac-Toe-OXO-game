@@ -1,0 +1,9 @@
+services:
+  - type: web
+    name: tic-tac-toe-oxo-game
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /health
+    autoDeploy: true
