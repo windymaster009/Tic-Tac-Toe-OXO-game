@@ -8,7 +8,7 @@
     <script defer src="js/dom.js?v=1"></script>
     <script defer src="js/config.js?v=1"></script>
     <script defer src="js/audio.js?v=2"></script>
-    <script defer src="js/main.js?v=15"></script>
+    <script defer src="js/main.js?v=18"></script>
     <title>Tic-Tac-Toe</title>
 </head>
 
@@ -40,12 +40,12 @@
                         <div class="mood-label">Ready to play</div>
                     </div>
                     <div class="ability-list" data-player="X">
-                        <button class="ability-btn ability-erase" data-player="X" data-ability="erase" type="button" title="Erase one opponent mark and end your turn">🔄 Erase <span class="ability-count">1</span></button>
-                        <button class="ability-btn ability-block" data-player="X" data-ability="block" type="button" title="Freeze one empty cell for the opponent next turn">⛔ Block <span class="ability-count">1</span></button>
-                        <button class="ability-btn ability-shield" data-player="X" data-ability="shield" type="button" title="Protect one of your marks from erase">🛡️ Shield <span class="ability-count">1</span></button>
-                        <button class="ability-btn ability-swap" data-player="X" data-ability="swap" type="button" title="Swap one of your marks with one enemy mark">🔁 Swap <span class="ability-count">3</span></button>
-                        <button class="ability-btn ability-undo" data-player="X" data-ability="undo" type="button" title="Cancel the opponent's last placed move">⏪ Undo <span class="ability-count">2</span></button>
-                        <button class="ability-btn ability-double" data-player="X" data-ability="double" type="button" title="Place two marks, but not for an instant win">⚡ Double <span class="ability-count">3</span></button>
+                        <button class="ability-btn ability-erase" data-player="X" data-ability="erase" type="button" title="Erase one opponent mark and end your turn"><span class="ability-label">🔄 Erase</span><span class="ability-side"><span class="ability-count">1</span><span class="ability-timer"></span><span class="ability-cooldown-track"><span class="ability-cooldown-fill"></span></span></span></button>
+                        <button class="ability-btn ability-block" data-player="X" data-ability="block" type="button" title="Freeze one empty cell for the opponent next turn"><span class="ability-label">⛔ Block</span><span class="ability-side"><span class="ability-count">1</span><span class="ability-timer"></span><span class="ability-cooldown-track"><span class="ability-cooldown-fill"></span></span></span></button>
+                        <button class="ability-btn ability-shield" data-player="X" data-ability="shield" type="button" title="Protect one of your marks from erase"><span class="ability-label">🛡️ Shield</span><span class="ability-side"><span class="ability-count">1</span><span class="ability-timer"></span><span class="ability-cooldown-track"><span class="ability-cooldown-fill"></span></span></span></button>
+                        <button class="ability-btn ability-swap" data-player="X" data-ability="swap" type="button" title="Swap one of your marks with one enemy mark"><span class="ability-label">🔁 Swap</span><span class="ability-side"><span class="ability-count">3</span><span class="ability-timer"></span><span class="ability-cooldown-track"><span class="ability-cooldown-fill"></span></span></span></button>
+                        <button class="ability-btn ability-undo" data-player="X" data-ability="undo" type="button" title="Cancel the opponent's last placed move"><span class="ability-label">⏪ Undo</span><span class="ability-side"><span class="ability-count">2</span><span class="ability-timer"></span><span class="ability-cooldown-track"><span class="ability-cooldown-fill"></span></span></span></button>
+                        <button class="ability-btn ability-double" data-player="X" data-ability="double" type="button" title="Place two marks, but not for an instant win"><span class="ability-label">⚡ Double</span><span class="ability-side"><span class="ability-count">3</span><span class="ability-timer"></span><span class="ability-cooldown-track"><span class="ability-cooldown-fill"></span></span></span></button>
                     </div>
                     <div class="ability-meter">
                         <div class="ability-fill" data-player-bar="X"></div>
@@ -65,12 +65,12 @@
                         <div class="mood-label">Waiting in the lobby</div>
                     </div>
                     <div class="ability-list" data-player="O">
-                        <button class="ability-btn ability-erase" data-player="O" data-ability="erase" type="button" title="Erase one opponent mark and end your turn">🔄 Erase <span class="ability-count">1</span></button>
-                        <button class="ability-btn ability-block" data-player="O" data-ability="block" type="button" title="Freeze one empty cell for the opponent next turn">⛔ Block <span class="ability-count">1</span></button>
-                        <button class="ability-btn ability-shield" data-player="O" data-ability="shield" type="button" title="Protect one of your marks from erase">🛡️ Shield <span class="ability-count">1</span></button>
-                        <button class="ability-btn ability-swap" data-player="O" data-ability="swap" type="button" title="Swap one of your marks with one enemy mark">🔁 Swap <span class="ability-count">3</span></button>
-                        <button class="ability-btn ability-undo" data-player="O" data-ability="undo" type="button" title="Cancel the opponent's last placed move">⏪ Undo <span class="ability-count">2</span></button>
-                        <button class="ability-btn ability-double" data-player="O" data-ability="double" type="button" title="Place two marks, but not for an instant win">⚡ Double <span class="ability-count">3</span></button>
+                        <button class="ability-btn ability-erase" data-player="O" data-ability="erase" type="button" title="Erase one opponent mark and end your turn"><span class="ability-label">🔄 Erase</span><span class="ability-side"><span class="ability-count">1</span><span class="ability-timer"></span><span class="ability-cooldown-track"><span class="ability-cooldown-fill"></span></span></span></button>
+                        <button class="ability-btn ability-block" data-player="O" data-ability="block" type="button" title="Freeze one empty cell for the opponent next turn"><span class="ability-label">⛔ Block</span><span class="ability-side"><span class="ability-count">1</span><span class="ability-timer"></span><span class="ability-cooldown-track"><span class="ability-cooldown-fill"></span></span></span></button>
+                        <button class="ability-btn ability-shield" data-player="O" data-ability="shield" type="button" title="Protect one of your marks from erase"><span class="ability-label">🛡️ Shield</span><span class="ability-side"><span class="ability-count">1</span><span class="ability-timer"></span><span class="ability-cooldown-track"><span class="ability-cooldown-fill"></span></span></span></button>
+                        <button class="ability-btn ability-swap" data-player="O" data-ability="swap" type="button" title="Swap one of your marks with one enemy mark"><span class="ability-label">🔁 Swap</span><span class="ability-side"><span class="ability-count">3</span><span class="ability-timer"></span><span class="ability-cooldown-track"><span class="ability-cooldown-fill"></span></span></span></button>
+                        <button class="ability-btn ability-undo" data-player="O" data-ability="undo" type="button" title="Cancel the opponent's last placed move"><span class="ability-label">⏪ Undo</span><span class="ability-side"><span class="ability-count">2</span><span class="ability-timer"></span><span class="ability-cooldown-track"><span class="ability-cooldown-fill"></span></span></span></button>
+                        <button class="ability-btn ability-double" data-player="O" data-ability="double" type="button" title="Place two marks, but not for an instant win"><span class="ability-label">⚡ Double</span><span class="ability-side"><span class="ability-count">3</span><span class="ability-timer"></span><span class="ability-cooldown-track"><span class="ability-cooldown-fill"></span></span></span></button>
                     </div>
                     <div class="ability-meter">
                         <div class="ability-fill" data-player-bar="O"></div>

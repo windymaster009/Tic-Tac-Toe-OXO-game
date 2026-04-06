@@ -39,6 +39,7 @@ const {
     playSwapSound,
     playUndoSound,
     playDoubleSound,
+    playKnockSound,
     setMusicMode,
     setMusicVolume,
     toggleMusicMute,
@@ -89,6 +90,11 @@ let clutchSymbol = null;
 let hintsRemaining = { X: 3, O: 3 };
 let energy = { X: 1, O: 0 };
 let abilityCosts = { erase: 2, block: 1, shield: 1, swap: 3, undo: 2, double: 3 };
+let abilityCooldownDurations = { erase: 0, block: 0, shield: 10000, swap: 20000, undo: 20000, double: 30000 };
+let abilityCooldowns = {
+    X: { erase: 0, block: 0, shield: 0, swap: 0, undo: 0, double: 0 },
+    O: { erase: 0, block: 0, shield: 0, swap: 0, undo: 0, double: 0 }
+};
 let abilityUsed = {
     X: { erase: false, block: false, shield: false, swap: false, undo: false, double: false },
     O: { erase: false, block: false, shield: false, swap: false, undo: false, double: false }
@@ -115,6 +121,25 @@ let previousRenderedTurn = '';
 let lastStatusVersion = 0;
 let confirmResolver = null;
 let autoJoinAttempted = false;
+let turnStartedAt = Date.now();
+let reminderLastFiredAt = 0;
+let reminderCount = 0;
+let reminderInterval = null;
+let abilityUiTimer = null;
+
+function getDefaultAbilityCooldowns() {
+    return {
+        X: { erase: 0, block: 0, shield: 0, swap: 0, undo: 0, double: 0 },
+        O: { erase: 0, block: 0, shield: 0, swap: 0, undo: 0, double: 0 }
+    };
+}
+
+function getDefaultAbilityUsage() {
+    return {
+        X: { erase: false, block: false, shield: false, swap: false, undo: false, double: false },
+        O: { erase: false, block: false, shield: false, swap: false, undo: false, double: false }
+    };
+}
 
 cells.forEach((cell) => {
     const cellElement = document.createElement('div');
@@ -476,24 +501,48 @@ function updateAbilityButtons() {
         const owner = button.dataset.player;
         const ability = button.dataset.ability;
         const countElement = button.querySelector('.ability-count');
+        const timerElement = button.querySelector('.ability-timer');
+        const cooldownFillElement = button.querySelector('.ability-cooldown-fill');
         const cost = abilityCosts[ability] ?? 0;
         const wasUsed = abilityUsed[owner]?.[ability] ?? false;
+        const isLimitedRoundAbility = ability === 'erase' || ability === 'block';
+        const cooldownDuration = abilityCooldownDurations[ability] ?? 0;
+        const cooldownStartedAt = abilityCooldowns[owner]?.[ability] ?? 0;
+        const cooldownRemainingMs = cooldownDuration > 0
+            ? Math.max(0, cooldownStartedAt + cooldownDuration - Date.now())
+            : 0;
+        const cooldownSeconds = cooldownRemainingMs / 1000;
+        const cooldownProgress = cooldownDuration > 0
+            ? Math.max(0, Math.min(100, (cooldownRemainingMs / cooldownDuration) * 100))
+            : 0;
+        const isCoolingDown = cooldownRemainingMs > 0;
         const canUse = owner === playerSymbol
             && playersJoined === 2
             && currentPlayer === playerSymbol
             && !gameEnded
             && !wasUsed
+            && !isCoolingDown
             && (energy[owner] ?? 0) >= cost;
 
         if (countElement) {
-            countElement.textContent = `${cost}`;
-            countElement.style.setProperty('--ability-ring', !wasUsed && (energy[owner] ?? 0) >= cost ? '360deg' : '0deg');
+            countElement.textContent = isCoolingDown ? `${Math.ceil(cooldownSeconds)}` : `${cost}`;
+            countElement.style.setProperty('--ability-ring', !wasUsed && !isCoolingDown && (energy[owner] ?? 0) >= cost ? '360deg' : '0deg');
+        }
+
+        if (timerElement) {
+            timerElement.textContent = isCoolingDown ? `CD ${cooldownSeconds.toFixed(1)}s` : isLimitedRoundAbility && wasUsed ? 'USED' : '';
+        }
+
+        if (cooldownFillElement) {
+            cooldownFillElement.style.setProperty('--cooldown-progress', `${cooldownProgress}%`);
         }
 
         button.disabled = !canUse;
         button.classList.toggle('is-selected', owner === playerSymbol && ability === activeAbility);
-        button.classList.toggle('is-ready', !wasUsed && (energy[owner] ?? 0) >= cost);
+        button.classList.toggle('is-ready', !wasUsed && !isCoolingDown && (energy[owner] ?? 0) >= cost);
         button.classList.toggle('is-used', wasUsed);
+        button.classList.toggle('is-cooling-down', isCoolingDown);
+        button.classList.toggle('has-timer', Boolean(timerElement?.textContent));
     });
 }
 
@@ -794,6 +843,37 @@ function updateStatus() {
         void playerStatusElement.offsetWidth;
         playerStatusElement.classList.add('turn-swap');
         previousRenderedTurn = turnKey;
+        turnStartedAt = Date.now();
+        reminderLastFiredAt = 0;
+        reminderCount = 0;
+        hideToast('reminder');
+    }
+}
+
+function checkAfkReminder() {
+    if (!roomCode || !playerSymbol || gameEnded || isSoloGame || playersJoined < 2) {
+        return;
+    }
+
+    const reminderDelay = 12000;
+    const waitDuration = Date.now() - turnStartedAt;
+
+    if (waitDuration < reminderDelay || reminderCount >= 3) {
+        return;
+    }
+
+    if (Date.now() - reminderLastFiredAt < reminderDelay) {
+        return;
+    }
+
+    reminderLastFiredAt = Date.now();
+    reminderCount += 1;
+    playKnockSound();
+
+    if (currentPlayer === playerSymbol) {
+        showToast('🚪 Knock knock... your turn is waiting. Are you still playing?', '🚪', 'reminder');
+    } else {
+        showToast(`🚪 Knock knock... ${currentPlayer} has been AFK for a bit. Still playing?`, '🚪', 'reminder');
     }
 }
 
@@ -890,6 +970,8 @@ function applyRoomState(state) {
     hintsRemaining = state.hintsRemaining || hintsRemaining;
     energy = state.energy || energy;
     abilityCosts = state.abilityCosts || abilityCosts;
+    abilityCooldownDurations = state.abilityCooldownDurations || abilityCooldownDurations;
+    abilityCooldowns = state.abilityCooldowns || abilityCooldowns;
     abilityUsed = state.abilityUsed || abilityUsed;
     hintUsedThisTurn = state.hintUsedThisTurn || hintUsedThisTurn;
     blockedCellIndex = Number.isInteger(state.blockedCell?.index) ? state.blockedCell.index : null;
@@ -1052,8 +1134,17 @@ function startPolling() {
         clearInterval(pollTimer);
     }
 
+    if (reminderInterval) {
+        clearInterval(reminderInterval);
+    }
+
     fetchRoomState();
     pollTimer = setInterval(fetchRoomState, 1000);
+    reminderInterval = setInterval(checkAfkReminder, 1000);
+    if (abilityUiTimer) {
+        clearInterval(abilityUiTimer);
+    }
+    abilityUiTimer = setInterval(updateAbilityButtons, 100);
 }
 
 async function createRoom() {
@@ -1089,10 +1180,9 @@ async function createRoom() {
         hintsRemaining = { X: 3, O: 3 };
         energy = { X: 1, O: 0 };
         abilityCosts = { erase: 2, block: 1, shield: 1, swap: 3, undo: 2, double: 3 };
-        abilityUsed = {
-            X: { erase: false, block: false, shield: false, swap: false, undo: false, double: false },
-            O: { erase: false, block: false, shield: false, swap: false, undo: false, double: false }
-        };
+        abilityCooldownDurations = { erase: 0, block: 0, shield: 10000, swap: 20000, undo: 20000, double: 30000 };
+        abilityCooldowns = getDefaultAbilityCooldowns();
+        abilityUsed = getDefaultAbilityUsage();
         hintUsedThisTurn = { X: false, O: false };
         blockedCellIndex = null;
         blockedCellOwner = null;
@@ -1106,6 +1196,7 @@ async function createRoom() {
         doubleMoveIndexes = [];
         setMusicMode('calm');
         hideToast();
+        hideToast('reminder');
         roomCodeInput.value = roomCode;
         resultElement.textContent = `🎯 Room ${roomCode} created. You are X and go first.`;
         startPolling();
@@ -1149,10 +1240,9 @@ async function createSoloRoom() {
         hintsRemaining = { X: 3, O: 3 };
         energy = { X: 1, O: 0 };
         abilityCosts = { erase: 2, block: 1, shield: 1, swap: 3, undo: 2, double: 3 };
-        abilityUsed = {
-            X: { erase: false, block: false, shield: false, swap: false, undo: false, double: false },
-            O: { erase: false, block: false, shield: false, swap: false, undo: false, double: false }
-        };
+        abilityCooldownDurations = { erase: 0, block: 0, shield: 10000, swap: 20000, undo: 20000, double: 30000 };
+        abilityCooldowns = getDefaultAbilityCooldowns();
+        abilityUsed = getDefaultAbilityUsage();
         hintUsedThisTurn = { X: false, O: false };
         blockedCellIndex = null;
         blockedCellOwner = null;
@@ -1166,6 +1256,7 @@ async function createSoloRoom() {
         doubleMoveIndexes = [];
         setMusicMode('calm');
         hideToast();
+        hideToast('reminder');
         roomCodeInput.value = roomCode;
         resultElement.textContent = `🤖 Solo room ${roomCode} created. You are X versus AI.`;
         startPolling();
@@ -1198,6 +1289,7 @@ async function joinRoom() {
         activeAbility = null;
         activeAbilitySelection = null;
         setMusicMode('calm');
+        hideToast('reminder');
         roomCodeInput.value = roomCode;
         resultElement.textContent = `✨ Joined room ${roomCode} as ${playerSymbol}.`;
         startPolling();
@@ -1482,6 +1574,7 @@ async function useAbility(index) {
 function handleAbilityButtonClick(event) {
     const owner = event.currentTarget.dataset.player;
     const ability = event.currentTarget.dataset.ability;
+    const abilityLabel = ability.charAt(0).toUpperCase() + ability.slice(1);
 
     if (owner !== playerSymbol) {
         showToast(`Only player ${playerSymbol || owner} can use this power on this screen.`, '🎮', 'general');
@@ -1499,14 +1592,25 @@ function handleAbilityButtonClick(event) {
     }
 
     const cost = abilityCosts[ability] ?? 0;
+    const cooldownDuration = abilityCooldownDurations[ability] ?? 0;
+    const cooldownStartedAt = abilityCooldowns[playerSymbol]?.[ability] ?? 0;
+    const cooldownRemainingMs = cooldownDuration > 0
+        ? Math.max(0, cooldownStartedAt + cooldownDuration - Date.now())
+        : 0;
+    const isLimitedRoundAbility = ability === 'erase' || ability === 'block';
 
-    if (abilityUsed[playerSymbol]?.[ability]) {
-        showToast(`🪫 ${ability} was already used this round.`, '🪫', 'general');
+    if (isLimitedRoundAbility && abilityUsed[playerSymbol]?.[ability]) {
+        showToast(`🪫 ${abilityLabel} is already spent this round. Restart the match to recharge it.`, '🪫', 'general');
+        return;
+    }
+
+    if (!isLimitedRoundAbility && cooldownRemainingMs > 0) {
+        showToast(`⏳ ${abilityLabel} is still cooling down. ${Math.ceil(cooldownRemainingMs / 1000)}s left before you can use it again.`, '⏳', 'general');
         return;
     }
 
     if ((energy[playerSymbol] ?? 0) < cost) {
-        showToast(`⚡ ${ability} needs ${cost} energy.`, '⚡', 'general');
+        showToast(`⚡ ${abilityLabel} needs ${cost} energy before it can fire.`, '⚡', 'general');
         return;
     }
 
@@ -1607,10 +1711,9 @@ async function restartGame() {
         hintsRemaining = { X: 3, O: 3 };
         energy = { X: 1, O: 0 };
         abilityCosts = { erase: 2, block: 1, shield: 1, swap: 3, undo: 2, double: 3 };
-        abilityUsed = {
-            X: { erase: false, block: false, shield: false, swap: false, undo: false, double: false },
-            O: { erase: false, block: false, shield: false, swap: false, undo: false, double: false }
-        };
+        abilityCooldownDurations = { erase: 0, block: 0, shield: 10000, swap: 20000, undo: 20000, double: 30000 };
+        abilityCooldowns = getDefaultAbilityCooldowns();
+        abilityUsed = getDefaultAbilityUsage();
         hintUsedThisTurn = { X: false, O: false };
         blockedCellIndex = null;
         blockedCellOwner = null;
@@ -1625,6 +1728,7 @@ async function restartGame() {
         lastStatusVersion = 0;
         setMusicMode('calm');
         hideToast();
+        hideToast('reminder');
         clearFireworks();
         applyRoomState(state);
     } catch (error) {

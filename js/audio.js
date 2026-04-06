@@ -8,6 +8,7 @@ window.gameAudio = (() => {
     let audioUnlocked = false;
     let musicMode = 'idle';
     let currentMusicSrc = '';
+    const trackPositions = {};
     let musicVolume = Number.isFinite(storedVolume) ? Math.max(0, Math.min(1, storedVolume)) : DEFAULT_MUSIC_VOLUME;
     let musicMuted = storedMuted;
 
@@ -112,6 +113,13 @@ window.gameAudio = (() => {
         window.setTimeout(() => playTone({ frequency: 520, slideTo: 1200, duration: 0.16, type: 'square', gain: 0.03 }), 80);
     }
 
+    function playKnockSound() {
+        playTone({ frequency: 220, duration: 0.08, type: 'triangle', gain: 0.035, slideTo: 200 });
+        window.setTimeout(() => {
+            playTone({ frequency: 220, duration: 0.08, type: 'triangle', gain: 0.035, slideTo: 200 });
+        }, 150);
+    }
+
     function startMusic() {
         if (!bgMusic || !audioUnlocked) {
             return;
@@ -119,6 +127,40 @@ window.gameAudio = (() => {
 
         applyMusicVolume();
         bgMusic.play().catch(() => {});
+    }
+
+    function storeCurrentTrackPosition() {
+        if (!bgMusic || !currentMusicSrc || Number.isNaN(bgMusic.currentTime)) {
+            return;
+        }
+
+        trackPositions[currentMusicSrc] = bgMusic.currentTime;
+    }
+
+    function restoreTrackPosition(trackSrc) {
+        if (!bgMusic || !trackSrc) {
+            return;
+        }
+
+        const savedPosition = trackPositions[trackSrc];
+        if (typeof savedPosition !== 'number' || savedPosition <= 0) {
+            return;
+        }
+
+        const applyPosition = () => {
+            try {
+                bgMusic.currentTime = savedPosition;
+            } catch (error) {
+                // Ignore seek timing issues until metadata is ready.
+            }
+        };
+
+        if (bgMusic.readyState >= 1) {
+            applyPosition();
+            return;
+        }
+
+        bgMusic.addEventListener('loadedmetadata', applyPosition, { once: true });
     }
 
     function setMusicMode(nextMode) {
@@ -136,9 +178,8 @@ window.gameAudio = (() => {
         }
 
         if (musicMode === 'idle') {
+            storeCurrentTrackPosition();
             bgMusic.pause();
-            bgMusic.currentTime = 0;
-            currentMusicSrc = '';
             return;
         }
 
@@ -153,9 +194,11 @@ window.gameAudio = (() => {
         applyMusicVolume();
 
         if (shouldChangeTrack) {
+            storeCurrentTrackPosition();
             currentMusicSrc = nextSrc;
             bgMusic.src = nextSrc;
             bgMusic.load();
+            restoreTrackPosition(nextSrc);
         }
 
         startMusic();
@@ -189,6 +232,18 @@ window.gameAudio = (() => {
 
     applyMusicVolume();
 
+    if (bgMusic) {
+        bgMusic.addEventListener('timeupdate', () => {
+            storeCurrentTrackPosition();
+        });
+
+        bgMusic.addEventListener('ended', () => {
+            if (currentMusicSrc) {
+                trackPositions[currentMusicSrc] = 0;
+            }
+        });
+    }
+
     return {
         unlockAudio,
         playMoveSound,
@@ -198,6 +253,7 @@ window.gameAudio = (() => {
         playSwapSound,
         playUndoSound,
         playDoubleSound,
+        playKnockSound,
         setMusicMode,
         setMusicVolume,
         toggleMusicMute,

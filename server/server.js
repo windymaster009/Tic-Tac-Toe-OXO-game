@@ -20,12 +20,46 @@ const ABILITY_COSTS = {
   undo: 2,
   double: 3
 };
+const ABILITY_COOLDOWNS = {
+  erase: 0,
+  block: 0,
+  shield: 10000,
+  swap: 20000,
+  undo: 20000,
+  double: 30000
+};
 
 function createAbilityUsageState() {
   return {
     X: { erase: false, block: false, shield: false, swap: false, undo: false, double: false },
     O: { erase: false, block: false, shield: false, swap: false, undo: false, double: false }
   };
+}
+
+function createAbilityCooldownState() {
+  return {
+    X: { erase: 0, block: 0, shield: 0, swap: 0, undo: 0, double: 0 },
+    O: { erase: 0, block: 0, shield: 0, swap: 0, undo: 0, double: 0 }
+  };
+}
+
+function getAbilityCooldownRemaining(room, symbol, ability, now = Date.now()) {
+  const cooldownMs = ABILITY_COOLDOWNS[ability] || 0;
+  if (!cooldownMs) {
+    return 0;
+  }
+
+  const lastUsedAt = room.abilityCooldowns?.[symbol]?.[ability] || 0;
+  return Math.max(0, lastUsedAt + cooldownMs - now);
+}
+
+function startAbilityCooldown(room, symbol, ability, now = Date.now()) {
+  const cooldownMs = ABILITY_COOLDOWNS[ability] || 0;
+  if (!cooldownMs) {
+    return;
+  }
+
+  room.abilityCooldowns[symbol][ability] = now;
 }
 
 app.use(express.json());
@@ -312,6 +346,7 @@ function createRoom() {
       O: false
     },
     abilityUsed: createAbilityUsageState(),
+    abilityCooldowns: createAbilityCooldownState(),
     blockedCell: null,
     shieldedCells: {
       X: null,
@@ -355,6 +390,7 @@ function resetRoundState(room) {
   room.energy = { X: 1, O: 0 };
   room.hintUsedThisTurn = { X: false, O: false };
   room.abilityUsed = createAbilityUsageState();
+  room.abilityCooldowns = createAbilityCooldownState();
   room.blockedCell = null;
   room.shieldedCells = { X: null, O: null };
   room.lastAction = null;
@@ -437,7 +473,7 @@ function performAiTurn(room) {
 
   if (
     room.energy[symbol] >= ABILITY_COSTS.undo
-    && !room.abilityUsed[symbol].undo
+    && getAbilityCooldownRemaining(room, symbol, 'undo') === 0
     && room.lastAction
     && room.lastAction.type === 'move'
     && room.lastAction.symbol === opponent
@@ -450,7 +486,7 @@ function performAiTurn(room) {
         room.lastMoveIndex = null;
       }
       room.energy[symbol] -= ABILITY_COSTS.undo;
-      room.abilityUsed[symbol].undo = true;
+      startAbilityCooldown(room, symbol, 'undo');
       room.playerLastSeen[symbol] = Date.now();
       room.updatedAt = Date.now();
       room.lastAction = { type: 'undo', symbol, index: undoIndex };
@@ -506,7 +542,7 @@ function performAiTurn(room) {
 
   if (
     room.energy[symbol] >= ABILITY_COSTS.swap
-    && !room.abilityUsed[symbol].swap
+    && getAbilityCooldownRemaining(room, symbol, 'swap') === 0
   ) {
     const ownMarks = room.board
       .map((value, index) => (value === symbol && room.shieldedCells[symbol] !== index ? index : -1))
@@ -540,7 +576,7 @@ function performAiTurn(room) {
       room.board[bestSwap.targetIndex] = symbol;
       room.lastMoveIndex = bestSwap.targetIndex;
       room.energy[symbol] -= ABILITY_COSTS.swap;
-      room.abilityUsed[symbol].swap = true;
+      startAbilityCooldown(room, symbol, 'swap');
       room.playerLastSeen[symbol] = Date.now();
       room.updatedAt = Date.now();
       room.lastAction = { type: 'swap', symbol, sourceIndex: bestSwap.sourceIndex, targetIndex: bestSwap.targetIndex };
@@ -556,7 +592,7 @@ function performAiTurn(room) {
 
   if (
     room.energy[symbol] >= ABILITY_COSTS.double
-    && !room.abilityUsed[symbol].double
+    && getAbilityCooldownRemaining(room, symbol, 'double') === 0
   ) {
     const doublePair = getBestDoubleMove(room, symbol);
     if (doublePair) {
@@ -564,7 +600,7 @@ function performAiTurn(room) {
       room.board[doublePair[1]] = symbol;
       room.lastMoveIndex = doublePair[1];
       room.energy[symbol] -= ABILITY_COSTS.double;
-      room.abilityUsed[symbol].double = true;
+      startAbilityCooldown(room, symbol, 'double');
       room.playerLastSeen[symbol] = Date.now();
       room.updatedAt = Date.now();
       room.lastAction = { type: 'double', symbol, indexes: [...doublePair] };
@@ -580,7 +616,7 @@ function performAiTurn(room) {
 
   if (
     room.energy[symbol] >= ABILITY_COSTS.shield
-    && !room.abilityUsed[symbol].shield
+    && getAbilityCooldownRemaining(room, symbol, 'shield') === 0
   ) {
     const ownMarks = room.board
       .map((value, index) => (value === symbol ? index : -1))
@@ -591,7 +627,7 @@ function performAiTurn(room) {
       const shieldIndex = ownMarks[0];
       room.shieldedCells[symbol] = shieldIndex;
       room.energy[symbol] -= ABILITY_COSTS.shield;
-      room.abilityUsed[symbol].shield = true;
+      startAbilityCooldown(room, symbol, 'shield');
       room.playerLastSeen[symbol] = Date.now();
       room.updatedAt = Date.now();
       room.lastAction = { type: 'shield', symbol, index: shieldIndex };
@@ -655,6 +691,8 @@ function serializeRoom(room, playerId) {
     hintsRemaining: room.hintsRemaining,
     energy: room.energy,
     abilityCosts: ABILITY_COSTS,
+    abilityCooldownDurations: ABILITY_COOLDOWNS,
+    abilityCooldowns: room.abilityCooldowns,
     hintUsedThisTurn: room.hintUsedThisTurn,
     abilityUsed: room.abilityUsed,
     blockedCell: room.blockedCell,
@@ -863,14 +901,21 @@ app.post('/api/rooms/:roomCode/ability', (req, res) => {
   }
 
   const energyCost = ABILITY_COSTS[ability];
+  const cooldownRemaining = getAbilityCooldownRemaining(room, symbol, ability);
+  const isLimitedRoundAbility = ability === 'erase' || ability === 'block';
 
   if (room.energy[symbol] < energyCost) {
     res.status(409).json({ error: `${ability} needs ${energyCost} energy.` });
     return;
   }
 
-  if (room.abilityUsed[symbol][ability]) {
+  if (isLimitedRoundAbility && room.abilityUsed[symbol][ability]) {
     res.status(409).json({ error: `${ability} was already used this round.` });
+    return;
+  }
+
+  if (!isLimitedRoundAbility && cooldownRemaining > 0) {
+    res.status(409).json({ error: `${ability} is cooling down for ${Math.ceil(cooldownRemaining / 1000)}s.` });
     return;
   }
 
@@ -889,7 +934,7 @@ app.post('/api/rooms/:roomCode/ability', (req, res) => {
       room.lastMoveIndex = null;
     }
     room.energy[symbol] -= energyCost;
-    room.abilityUsed[symbol].undo = true;
+    startAbilityCooldown(room, symbol, 'undo');
     room.playerLastSeen[symbol] = Date.now();
     room.updatedAt = Date.now();
     room.lastAction = { type: 'undo', symbol, index: undoIndex };
@@ -934,7 +979,7 @@ app.post('/api/rooms/:roomCode/ability', (req, res) => {
     room.board[indexes[1]] = symbol;
     room.lastMoveIndex = indexes[1];
     room.energy[symbol] -= energyCost;
-    room.abilityUsed[symbol].double = true;
+    startAbilityCooldown(room, symbol, 'double');
     room.playerLastSeen[symbol] = Date.now();
     room.updatedAt = Date.now();
     room.lastAction = { type: 'double', symbol, indexes: [...indexes] };
@@ -1023,7 +1068,7 @@ app.post('/api/rooms/:roomCode/ability', (req, res) => {
     room.board[index] = symbol;
     room.lastMoveIndex = index;
     room.energy[symbol] -= energyCost;
-    room.abilityUsed[symbol].swap = true;
+    startAbilityCooldown(room, symbol, 'swap');
     room.playerLastSeen[symbol] = Date.now();
     room.updatedAt = Date.now();
     room.lastAction = { type: 'swap', symbol, sourceIndex, targetIndex: index };
@@ -1045,7 +1090,7 @@ app.post('/api/rooms/:roomCode/ability', (req, res) => {
 
   room.shieldedCells[symbol] = index;
   room.energy[symbol] -= energyCost;
-  room.abilityUsed[symbol].shield = true;
+  startAbilityCooldown(room, symbol, 'shield');
   room.playerLastSeen[symbol] = Date.now();
   room.updatedAt = Date.now();
   room.lastAction = { type: 'shield', symbol, index };

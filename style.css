@@ -516,6 +516,11 @@ body::after {
 }
 
 .ability-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    min-height: 54px;
     padding: 8px 10px;
     border: 1px solid rgba(255, 255, 255, 0.08);
     border-radius: 12px;
@@ -525,6 +530,25 @@ body::after {
     font-weight: 700;
     cursor: pointer;
     transition: transform 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease, background 0.18s ease, opacity 0.18s ease;
+}
+
+.ability-label {
+    display: inline-flex;
+    align-items: center;
+    min-width: 0;
+    text-align: left;
+    line-height: 1.15;
+}
+
+.ability-side {
+    display: inline-flex;
+    flex-direction: column;
+    align-items: flex-end;
+    justify-content: center;
+    gap: 3px;
+    min-width: 54px;
+    margin-left: auto;
+    flex-shrink: 0;
 }
 
 .ability-btn:hover:not(:disabled) {
@@ -540,6 +564,12 @@ body::after {
     box-shadow: 0 0 18px rgba(255, 255, 255, 0.06);
 }
 
+.ability-btn.is-cooling-down {
+    opacity: 0.96;
+    filter: saturate(0.92);
+    box-shadow: 0 0 18px rgba(255, 209, 102, 0.08);
+}
+
 .ability-count {
     position: relative;
     display: inline-flex;
@@ -547,11 +577,78 @@ body::after {
     justify-content: center;
     width: 20px;
     height: 20px;
-    margin-left: 4px;
     border-radius: 999px;
     background: rgba(255, 255, 255, 0.08);
     font-size: 11px;
+    font-variant-numeric: tabular-nums;
     z-index: 0;
+}
+
+.ability-timer {
+    font-size: 11px;
+    line-height: 1;
+    text-align: right;
+    color: rgba(206, 220, 247, 0.82);
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    font-variant-numeric: tabular-nums;
+    min-height: 12px;
+    white-space: nowrap;
+}
+
+.ability-btn.has-timer .ability-timer {
+    color: #fff2ba;
+    text-shadow: 0 0 12px rgba(255, 209, 102, 0.22);
+}
+
+.ability-btn.is-used .ability-timer {
+    color: #ffb8a4;
+}
+
+.ability-btn.is-cooling-down .ability-timer {
+    color: #ffe9a4;
+    text-shadow: 0 0 12px rgba(255, 210, 92, 0.28);
+}
+
+.ability-cooldown-track {
+    position: relative;
+    width: 52px;
+    height: 6px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.08);
+    overflow: hidden;
+    opacity: 0;
+    transform: scaleX(0.92);
+    transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.ability-cooldown-fill {
+    display: block;
+    width: var(--cooldown-progress, 0%);
+    height: 100%;
+    border-radius: inherit;
+    background: linear-gradient(90deg, #ffe066, #ff9f43);
+    box-shadow: 0 0 12px rgba(255, 196, 77, 0.28);
+    transition: width 0.12s linear;
+}
+
+.ability-btn.has-timer .ability-cooldown-track {
+    opacity: 1;
+    transform: scaleX(1);
+}
+
+.ability-btn.has-timer:disabled {
+    opacity: 0.92;
+}
+
+.ability-btn.is-used .ability-cooldown-track {
+    opacity: 0.78;
+}
+
+.ability-btn.is-used .ability-cooldown-fill {
+    width: 100%;
+    background: linear-gradient(90deg, #ff8d6d, #ff5f5f);
+    box-shadow: 0 0 12px rgba(255, 112, 112, 0.22);
 }
 
 .ability-count::before {
